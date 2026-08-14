@@ -5,7 +5,7 @@ import { ChangeEvent, PointerEvent, useCallback, useEffect, useRef, useState } f
 type Tool = "select" | "rect" | "circle" | "highlight" | "line" | "arrow" | "text";
 type WatermarkMode = "corner" | "center" | "diagonal" | "tile" | "tileHorizontal" | "tileVertical";
 type Point = { x: number; y: number };
-type Mark = { id: number; tool: Exclude<Tool, "select"> | "watermark"; start: Point; end: Point; color: string; width: number; text?: string; opacity?: number; repeat?: boolean; watermarkMode?: WatermarkMode };
+type Mark = { id: number; tool: Exclude<Tool, "select"> | "watermark"; start: Point; end: Point; color: string; width: number; radius?: number; text?: string; opacity?: number; repeat?: boolean; watermarkMode?: WatermarkMode };
 
 const tools: { id: Tool; icon: string; label: string; shortcut: string }[] = [
   { id: "select", icon: "select", label: "移动", shortcut: "V" },
@@ -34,6 +34,13 @@ const distanceToSegment = (point: Point, start: Point, end: Point) => {
   const t = length ? Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / length)) : 0;
   return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
 };
+const roundedRectPath = (ctx: CanvasRenderingContext2D, start: Point, end: Point, radius: number) => {
+  const left = Math.min(start.x, end.x), top = Math.min(start.y, end.y), width = Math.abs(end.x - start.x), height = Math.abs(end.y - start.y);
+  const r = Math.min(Math.max(0, radius), width / 2, height / 2);
+  ctx.beginPath(); ctx.moveTo(left + r, top); ctx.lineTo(left + width - r, top); ctx.quadraticCurveTo(left + width, top, left + width, top + r);
+  ctx.lineTo(left + width, top + height - r); ctx.quadraticCurveTo(left + width, top + height, left + width - r, top + height);
+  ctx.lineTo(left + r, top + height); ctx.quadraticCurveTo(left, top + height, left, top + height - r); ctx.lineTo(left, top + r); ctx.quadraticCurveTo(left, top, left + r, top); ctx.closePath();
+};
 const constrainSquare = (start: Point, end: Point) => {
   const dx = end.x - start.x, dy = end.y - start.y, side = Math.max(Math.abs(dx), Math.abs(dy));
   return { x: start.x + (dx < 0 ? -side : side), y: start.y + (dy < 0 ? -side : side) };
@@ -55,7 +62,7 @@ const ToolIcon = ({ icon }: { icon: string }) => {
 
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null), imageRef = useRef<HTMLImageElement | null>(null), fileRef = useRef<HTMLInputElement>(null);
-  const dragStart = useRef<Point | null>(null), moveSnapshot = useRef<Mark[] | null>(null), widthSnapshot = useRef<Mark[] | null>(null), watermarkDrag = useRef<{ start: Point; origin: Point } | null>(null), shapeResizeData = useRef<{ id: number; fixed: Point; offset: Point; snapshot: Mark[] } | null>(null), lineResizeData = useRef<{ id: number; endpoint: "start" | "end"; snapshot: Mark[] } | null>(null), resizeData = useRef<{ id: number; anchor: Point; baseWidth: number; baseHeight: number; width: number; snapshot: Mark[] } | null>(null), nextId = useRef(1);
+  const dragStart = useRef<Point | null>(null), moveSnapshot = useRef<Mark[] | null>(null), widthSnapshot = useRef<Mark[] | null>(null), watermarkDrag = useRef<{ start: Point; origin: Point } | null>(null), cornerDragData = useRef<{ id: number; origin: Point; snapshot: Mark[] } | null>(null), shapeResizeData = useRef<{ id: number; fixed: Point; offset: Point; snapshot: Mark[] } | null>(null), lineResizeData = useRef<{ id: number; endpoint: "start" | "end"; snapshot: Mark[] } | null>(null), resizeData = useRef<{ id: number; anchor: Point; baseWidth: number; baseHeight: number; width: number; snapshot: Mark[] } | null>(null), nextId = useRef(1);
   const rotateData = useRef<{ id: number; center: Point; length: number; snapshot: Mark[] } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [fileName, setFileName] = useState(""), [tool, setTool] = useState<Tool>("rect"), [color, setColor] = useState(colors[0]);
@@ -72,11 +79,11 @@ export default function Home() {
   const drawMark = useCallback((ctx: CanvasRenderingContext2D, mark: Mark) => {
     const { start, end } = mark;
     ctx.save(); ctx.strokeStyle = mark.color; ctx.fillStyle = mark.color; ctx.lineWidth = mark.width; ctx.lineCap = "round"; ctx.lineJoin = "round";
-    if (mark.tool === "rect") ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
+    if (mark.tool === "rect") { if (mark.radius) { roundedRectPath(ctx, start, end, mark.radius); ctx.stroke(); } else ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y); }
     else if (mark.tool === "circle") {
       ctx.beginPath(); ctx.ellipse((start.x + end.x) / 2, (start.y + end.y) / 2, Math.abs(end.x - start.x) / 2, Math.abs(end.y - start.y) / 2, 0, 0, Math.PI * 2); ctx.stroke();
     }
-    else if (mark.tool === "highlight") { ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .52; ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y); }
+    else if (mark.tool === "highlight") { ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .52; if (mark.radius) { roundedRectPath(ctx, start, end, mark.radius); ctx.fill(); } else ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y); }
     else if (mark.tool === "line" || mark.tool === "arrow") {
       ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
       if (mark.tool === "arrow") {
@@ -138,7 +145,7 @@ export default function Home() {
         if (selected.tool === "circle") { ctx.beginPath(); ctx.ellipse((left + right) / 2, (top + bottom) / 2, (right - left) / 2, (bottom - top) / 2, 0, 0, Math.PI * 2); ctx.stroke(); }
         else ctx.strokeRect(left, top, right - left, bottom - top);
       }
-      ctx.setLineDash([]); corners.forEach((point, index) => { const resizeHandle = (selected.tool === "rect" || selected.tool === "circle" || selected.tool === "highlight" || selected.tool === "text") && index === 2; ctx.fillStyle = resizeHandle ? "#ffd43b" : "white"; ctx.beginPath(); ctx.arc(point.x, point.y, resizeHandle ? 10 : 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+      ctx.setLineDash([]); corners.forEach((point, index) => { const resizeHandle = (selected.tool === "rect" || selected.tool === "circle" || selected.tool === "highlight" || selected.tool === "text") && index === 2, cornerHandle = (selected.tool === "rect" || selected.tool === "highlight") && index === 0; ctx.fillStyle = resizeHandle ? "#ffd43b" : cornerHandle ? "#2774e6" : "white"; ctx.beginPath(); ctx.arc(point.x, point.y, resizeHandle || cornerHandle ? 8 : 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
       if (selected.tool === "line" || selected.tool === "arrow") [selected.start, selected.end].forEach((point) => { ctx.fillStyle = "#ffd43b"; ctx.beginPath(); ctx.arc(point.x, point.y, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
       if (selected.tool === "arrow") {
         const center = { x: (selected.start.x + selected.end.x) / 2, y: (selected.start.y + selected.end.y) / 2 };
@@ -166,7 +173,7 @@ export default function Home() {
     image.onload = () => {
       const scale = Math.min(1, 2400 / Math.max(image.naturalWidth, image.naturalHeight));
       imageRef.current = image; setSize({ width: Math.round(image.naturalWidth * scale), height: Math.round(image.naturalHeight * scale) });
-      setFileName(file.name); setMarks([]); setPast([]); setFuture([]); setSelectedId(null); setSelectedIds([]); setSelectionBox(null); setWatermarkPosition(null); widthSnapshot.current = null; shapeResizeData.current = null; lineResizeData.current = null; URL.revokeObjectURL(url);
+      setFileName(file.name); setMarks([]); setPast([]); setFuture([]); setSelectedId(null); setSelectedIds([]); setSelectionBox(null); setWatermarkPosition(null); widthSnapshot.current = null; cornerDragData.current = null; shapeResizeData.current = null; lineResizeData.current = null; URL.revokeObjectURL(url);
     };
     image.src = url;
   }, []);
@@ -196,6 +203,9 @@ export default function Home() {
       const selectedShape = safeSelectedIds.length === 1 ? safeMarks.find((mark) => mark.id === selectedId && (mark.tool === "rect" || mark.tool === "circle" || mark.tool === "highlight")) : null;
       if (selectedShape) {
         const bounds = getMarkBounds(selectedShape), maxX = Math.max(selectedShape.start.x, selectedShape.end.x), maxY = Math.max(selectedShape.start.y, selectedShape.end.y);
+        if ((selectedShape.tool === "rect" || selectedShape.tool === "highlight") && Math.hypot(point.x - (Math.min(selectedShape.start.x, selectedShape.end.x) - 8), point.y - (Math.min(selectedShape.start.y, selectedShape.end.y) - 8)) <= 18) {
+          event.currentTarget.setPointerCapture(event.pointerId); dragStart.current = point; cornerDragData.current = { id: selectedShape.id, origin: point, snapshot: safeMarks }; setDragging(true); return;
+        }
         if (Math.hypot(point.x - bounds.right, point.y - bounds.bottom) <= 16) {
           event.currentTarget.setPointerCapture(event.pointerId); dragStart.current = point;
           shapeResizeData.current = { id: selectedShape.id, fixed: { x: Math.min(selectedShape.start.x, selectedShape.end.x), y: Math.min(selectedShape.start.y, selectedShape.end.y) }, offset: { x: point.x - maxX - 8, y: point.y - maxY - 8 }, snapshot: safeMarks };
@@ -243,6 +253,10 @@ export default function Home() {
     if (tool === "select" && watermarkDrag.current) {
       const { start, origin } = watermarkDrag.current;
       setWatermarkPosition({ x: origin.x + point.x - start.x, y: origin.y + point.y - start.y });
+    } else if (tool === "select" && cornerDragData.current) {
+      const { id, origin, snapshot } = cornerDragData.current, base = snapshot.find((mark) => mark.id === id)?.radius ?? 0;
+      const radius = Math.max(0, Math.min(80, base + ((origin.x - point.x) + (origin.y - point.y)) / 2));
+      setMarks(snapshot.map((mark) => mark.id === id ? { ...mark, radius } : mark));
     } else if (tool === "select" && lineResizeData.current) {
       const { id, endpoint, snapshot } = lineResizeData.current;
       setMarks(snapshot.map((mark) => mark.id === id ? { ...mark, [endpoint]: point } : mark));
@@ -268,8 +282,9 @@ export default function Home() {
     if (tool === "line" && event.shiftKey) end.y = start.y;
     if (tool === "circle" && event.shiftKey) Object.assign(end, constrainSquare(start, end));
     if (tool === "select") {
-      const watermarkMoving = watermarkDrag.current, lineResizing = lineResizeData.current, rotation = rotateData.current, shapeResizing = shapeResizeData.current, resizing = resizeData.current, movement = moveSnapshot.current, marquee = selectionBox;
-      if (!watermarkMoving && lineResizing && Math.hypot(end.x - start.x, end.y - start.y) > 3) { const snapshot = lineResizing.snapshot; setPast((history) => [...(Array.isArray(history) ? history : []), snapshot]); setFuture([]); }
+      const watermarkMoving = watermarkDrag.current, cornerResizing = cornerDragData.current, lineResizing = lineResizeData.current, rotation = rotateData.current, shapeResizing = shapeResizeData.current, resizing = resizeData.current, movement = moveSnapshot.current, marquee = selectionBox;
+      if (!watermarkMoving && cornerResizing && Math.hypot(end.x - start.x, end.y - start.y) > 3) { const snapshot = cornerResizing.snapshot; setPast((history) => [...(Array.isArray(history) ? history : []), snapshot]); setFuture([]); }
+      else if (!watermarkMoving && lineResizing && Math.hypot(end.x - start.x, end.y - start.y) > 3) { const snapshot = lineResizing.snapshot; setPast((history) => [...(Array.isArray(history) ? history : []), snapshot]); setFuture([]); }
       else if (!watermarkMoving && rotation && Math.hypot(end.x - rotation.center.x, end.y - rotation.center.y) > 3) { const snapshot = rotation.snapshot; setPast((history) => [...(Array.isArray(history) ? history : []), snapshot]); setFuture([]); }
       else if (!watermarkMoving && shapeResizing && Math.hypot(end.x - start.x, end.y - start.y) > 3) { const snapshot = shapeResizing.snapshot; setPast((history) => [...(Array.isArray(history) ? history : []), snapshot]); setFuture([]); }
       else if (!watermarkMoving && resizing && Math.hypot(end.x - start.x, end.y - start.y) > 3) { const snapshot = resizing.snapshot; setPast((history) => [...(Array.isArray(history) ? history : []), snapshot]); setFuture([]); }
@@ -279,7 +294,7 @@ export default function Home() {
         const ids = safeMarks.filter((mark) => mark.tool !== "watermark").filter((mark) => { const bounds = getMarkBounds(mark); return bounds.left <= right && bounds.right >= left && bounds.top <= bottom && bounds.bottom >= top; }).map((mark) => mark.id);
         setSelectedIds(ids); setSelectedId(ids[0] ?? null);
       }
-      moveSnapshot.current = null; rotateData.current = null; shapeResizeData.current = null; lineResizeData.current = null; resizeData.current = null; watermarkDrag.current = null;
+      moveSnapshot.current = null; rotateData.current = null; cornerDragData.current = null; shapeResizeData.current = null; lineResizeData.current = null; resizeData.current = null; watermarkDrag.current = null;
       setSelectionBox(null);
     } else if (Math.hypot(end.x - start.x, end.y - start.y) > 5) commit({ id: nextId.current++, tool, start, end, color, width: lineWidth });
     dragStart.current = null; setDragging(false); setPreview(null);
@@ -301,7 +316,7 @@ export default function Home() {
       setPast((history) => [...(Array.isArray(history) ? history : []), current]); setFuture([]);
       return current.filter((mark) => !ids.includes(mark.id));
     });
-    setSelectedId(null); setSelectedIds([]);
+    setSelectedId(null); setSelectedIds([]); setCornerEditorOpen(false);
   }, [safeSelectedIds, selectedId]);
   const changeColor = (nextColor: string) => {
     setColor(nextColor);
