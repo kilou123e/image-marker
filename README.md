@@ -1,4 +1,20 @@
-# vinext-starter
+# 标一下 · 轻量图片标注
+
+一个在浏览器中完成图片标注与水印制作的小工具，适合截图讲解、产品反馈、教程配图和内容发布。
+
+## 产品亮点
+
+- **快速标注**：线框、圆框、高亮、文字、箭头、直线，以及矩形/圆形模糊。
+- **实时可控**：对象可移动、缩放、旋转和调整粗细；水印支持文字或图片、透明度、大小、旋转和铺陈方式预览。
+- **本地优先**：图片只在浏览器中处理，不上传到服务器；支持拖拽、粘贴截图、撤销/重做和 PNG 导出。
+
+在线使用：<https://biao-yi-xia.opssai0818.chatgpt.site>
+
+源码仓库：<https://github.com/kilou123e/image-marker>
+
+---
+
+## 开发说明
 
 A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
