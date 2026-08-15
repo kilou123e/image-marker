@@ -100,7 +100,10 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .upload-art i { display: grid; place-items: center; width: 43px; height: 43px; border: 2px solid #6e7279; border-radius: 12px; color: #55595f; font-size: 26px; font-style: normal; }
 .drop-zone strong { font-size: 21px; letter-spacing: -.03em; }
 .drop-zone small { margin: 8px 0 24px; color: #7b7e84; }
-.drop-zone b { padding: 10px 20px; border-radius: 9px; background: #007aff; color: white; font-size: 13px; box-shadow: 0 2px 5px #007aff2e; }
+.product-highlights { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; max-width: 470px; margin: -8px 0 22px; color: #7b7e84; font-size: 11px; line-height: 1.5; }
+.product-highlights span { white-space: nowrap; }
+.product-highlights b { color: #007aff; font-weight: 700; }
+.drop-zone > b { padding: 10px 20px; border-radius: 9px; background: #007aff; color: white; font-size: 13px; box-shadow: 0 2px 5px #007aff2e; }
 .canvas-stage { position: relative; display: grid; place-items: center; width: min(100%, 1200px); min-width: 0; }
 .canvas-stage canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100svh - 260px); border: 1px solid #c7c7cc; border-radius: 6px; background: white; box-shadow: 0 12px 32px #1d1d1f24; touch-action: none; cursor: crosshair; }
 .canvas-stage canvas.selecting { cursor: default; }
@@ -109,6 +112,9 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .image-meta button { padding: 5px 9px; border: 0; border-radius: 14px; background: #dedfe2; color: #44474c; cursor: pointer; }
 footer { display: flex; align-items: center; justify-content: space-between; min-height: 38px; margin-top: auto; padding: 0 clamp(18px, 4vw, 44px); border-top: 1px solid var(--line); background: var(--page); color: #7e8186; font-size: 11px; }
 footer span:first-child::before { content: "●"; margin-right: 6px; color: #17a673; }
+.footer-brand { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; color: #55595f; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.footer-brand img { display: block; width: 56px; height: 22px; border-radius: 4px; object-fit: cover; object-position: center; }
+.footer-brand b { font-weight: 700; }
 
 @media (max-width: 820px) {
   .app-shell { display: flex; flex-direction: column; }
@@ -127,7 +133,7 @@ footer span:first-child::before { content: "●"; margin-right: 6px; color: #17a
   .workspace { min-height: 180px; padding: 14px 12px 24px; }
   .drop-zone { min-height: 310px; padding: 28px 18px; }
   .drop-zone strong { font-size: 18px; }
-  footer span:last-child { display: none; }
+  footer > span:nth-child(2) { display: none; }
 }
 
 @media (max-width: 1100px) {
