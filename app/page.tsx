@@ -2,14 +2,14 @@
 
 import { ChangeEvent, PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 
-type Tool = "select" | "rect" | "circle" | "highlight" | "line" | "arrow" | "text";
+type Tool = "select" | "rect" | "circle" | "highlight" | "blur" | "blurCircle" | "line" | "arrow" | "text";
 type WatermarkMode = "corner" | "center" | "diagonal" | "tile" | "tileHorizontal" | "tileVertical";
 type Point = { x: number; y: number };
 type Mark = { id: number; tool: Exclude<Tool, "select"> | "watermark"; start: Point; end: Point; color: string; width: number; radius?: number; text?: string; opacity?: number; repeat?: boolean; watermarkMode?: WatermarkMode };
 
 const tools: { id: Tool; icon: string; label: string; shortcut: string }[] = [
   { id: "select", icon: "select", label: "移动", shortcut: "V" },
-  { id: "rect", icon: "rect", label: "线框", shortcut: "R" }, { id: "circle", icon: "circle", label: "圆框", shortcut: "C" }, { id: "highlight", icon: "highlight", label: "高亮", shortcut: "H" },
+  { id: "rect", icon: "rect", label: "线框", shortcut: "R" }, { id: "circle", icon: "circle", label: "圆框", shortcut: "C" }, { id: "highlight", icon: "highlight", label: "高亮", shortcut: "H" }, { id: "blur", icon: "blur", label: "模糊", shortcut: "B" }, { id: "blurCircle", icon: "blurCircle", label: "圆模糊", shortcut: "O" },
   { id: "arrow", icon: "arrow", label: "箭头", shortcut: "A" }, { id: "line", icon: "line", label: "直线", shortcut: "L" }, { id: "text", icon: "text", label: "文字", shortcut: "T" },
 ];
 const colors = ["#00e1ff", "#ff00ea", "#ff5a36", "#ffb000", "#17a673", "#2774e6", "#8b5cf6", "#171717"];
@@ -53,6 +53,8 @@ const ToolIcon = ({ icon }: { icon: string }) => {
     rect: <rect {...common} x="4" y="4" width="16" height="16" rx="2" />,
     circle: <circle {...common} cx="12" cy="12" r="8" />,
     highlight: <rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" />,
+    blur: <><circle {...common} cx="8" cy="8" r="2.2" /><circle {...common} cx="16" cy="8" r="2.2" /><circle {...common} cx="8" cy="16" r="2.2" /><circle {...common} cx="16" cy="16" r="2.2" /></>,
+    blurCircle: <><circle {...common} cx="12" cy="12" r="8" /><circle fill="currentColor" cx="9" cy="9" r="1.8" /><circle fill="currentColor" cx="15" cy="9" r="1.8" /><circle fill="currentColor" cx="9" cy="15" r="1.8" /><circle fill="currentColor" cx="15" cy="15" r="1.8" /></>,
     arrow: <path {...common} d="M5 19 19 5m0 0h-7m7 0v7" />,
     line: <path {...common} d="M5 19 19 5" />,
     text: <path {...common} d="M5 5h14M12 5v14M8 19h8" />,
@@ -62,7 +64,7 @@ const ToolIcon = ({ icon }: { icon: string }) => {
 
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null), imageRef = useRef<HTMLImageElement | null>(null), fileRef = useRef<HTMLInputElement>(null);
-  const dragStart = useRef<Point | null>(null), moveSnapshot = useRef<Mark[] | null>(null), widthSnapshot = useRef<Mark[] | null>(null), watermarkDrag = useRef<{ start: Point; origin: Point } | null>(null), cornerDragData = useRef<{ id: number; origin: Point; snapshot: Mark[] } | null>(null), shapeResizeData = useRef<{ id: number; fixed: Point; offset: Point; snapshot: Mark[] } | null>(null), lineResizeData = useRef<{ id: number; endpoint: "start" | "end"; snapshot: Mark[] } | null>(null), resizeData = useRef<{ id: number; anchor: Point; baseWidth: number; baseHeight: number; width: number; snapshot: Mark[] } | null>(null), nextId = useRef(1);
+  const dragStart = useRef<Point | null>(null), moveSnapshot = useRef<Mark[] | null>(null), widthSnapshot = useRef<Mark[] | null>(null), watermarkDrag = useRef<{ start: Point; origin: Point } | null>(null), cornerDragData = useRef<{ id: number; origin: Point; snapshot: Mark[] } | null>(null), blurDragData = useRef<{ id: number; origin: Point; snapshot: Mark[] } | null>(null), shapeResizeData = useRef<{ id: number; fixed: Point; offset: Point; snapshot: Mark[] } | null>(null), lineResizeData = useRef<{ id: number; endpoint: "start" | "end"; snapshot: Mark[] } | null>(null), resizeData = useRef<{ id: number; anchor: Point; baseWidth: number; baseHeight: number; width: number; snapshot: Mark[] } | null>(null), nextId = useRef(1);
   const rotateData = useRef<{ id: number; center: Point; length: number; snapshot: Mark[] } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [fileName, setFileName] = useState(""), [tool, setTool] = useState<Tool>("rect"), [color, setColor] = useState(colors[0]);
@@ -70,11 +72,12 @@ export default function Home() {
   const [preview, setPreview] = useState<Mark | null>(null), [dragging, setDragging] = useState(false), [watermarkOpen, setWatermarkOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]), [selectionBox, setSelectionBox] = useState<{ start: Point; end: Point } | null>(null);
+  const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [watermark, setWatermark] = useState("仅供展示"), [watermarkOpacity, setWatermarkOpacity] = useState(22), [watermarkSize, setWatermarkSize] = useState(34), [watermarkMode, setWatermarkMode] = useState<WatermarkMode>("corner"), [watermarkPosition, setWatermarkPosition] = useState<Point | null>(null);
   const [textValue, setTextValue] = useState("");
   const safeMarks = Array.isArray(marks) ? marks : [], safePast = Array.isArray(past) ? past : [], safeFuture = Array.isArray(future) ? future : [], safeSelectedIds = Array.isArray(selectedIds) ? selectedIds : [];
   const selectedArrow = safeSelectedIds.length === 1 ? safeMarks.find((mark) => mark.id === selectedId && mark.tool === "arrow") : null;
-  const chooseTool = (nextTool: Tool) => { setTool(nextTool); if (nextTool !== "select") { setSelectedId(null); setSelectedIds([]); setSelectionBox(null); } };
+  const chooseTool = (nextTool: Tool) => { setTool(nextTool); setHoveredId(null); if (nextTool !== "select") { setSelectedId(null); setSelectedIds([]); setSelectionBox(null); } };
 
   const drawMark = useCallback((ctx: CanvasRenderingContext2D, mark: Mark) => {
     const { start, end } = mark;
@@ -84,6 +87,40 @@ export default function Home() {
       ctx.beginPath(); ctx.ellipse((start.x + end.x) / 2, (start.y + end.y) / 2, Math.abs(end.x - start.x) / 2, Math.abs(end.y - start.y) / 2, 0, 0, Math.PI * 2); ctx.stroke();
     }
     else if (mark.tool === "highlight") { ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = .52; if (mark.radius) { roundedRectPath(ctx, start, end, mark.radius); ctx.fill(); } else ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y); }
+    else if (mark.tool === "blur" || mark.tool === "blurCircle") {
+      const image = imageRef.current;
+      if (image) {
+        ctx.save();
+        const blurRadius = Math.max(2, mark.width * 2);
+        const left = Math.min(start.x, end.x), top = Math.min(start.y, end.y), width = Math.abs(end.x - start.x), height = Math.abs(end.y - start.y);
+        const sourceLeft = Math.max(0, Math.floor(left)), sourceTop = Math.max(0, Math.floor(top)), sourceRight = Math.min(size.width, Math.ceil(left + width)), sourceBottom = Math.min(size.height, Math.ceil(top + height)), sourceWidth = Math.max(1, sourceRight - sourceLeft), sourceHeight = Math.max(1, sourceBottom - sourceTop), pad = Math.ceil(blurRadius * 2);
+        const buffer = document.createElement("canvas"); buffer.width = sourceWidth + pad * 2; buffer.height = sourceHeight + pad * 2;
+        const bufferCtx = buffer.getContext("2d");
+        if (!bufferCtx) { ctx.restore(); return; }
+        const sample = document.createElement("canvas"); sample.width = 2; sample.height = 2;
+        const sampleCtx = sample.getContext("2d");
+        if (!sampleCtx) { ctx.restore(); return; }
+        sampleCtx.drawImage(image, sourceLeft, sourceTop, 1, 1, 0, 0, 1, 1);
+        sampleCtx.drawImage(image, sourceRight - 1, sourceTop, 1, 1, 1, 0, 1, 1);
+        sampleCtx.drawImage(image, sourceLeft, sourceBottom - 1, 1, 1, 0, 1, 1, 1);
+        sampleCtx.drawImage(image, sourceRight - 1, sourceBottom - 1, 1, 1, 1, 1, 1, 1);
+        const edge = sampleCtx.getImageData(0, 0, 2, 2).data;
+        const backgroundOffset = [0, 4, 8, 12].reduce((best, offset) => edge[offset] * .299 + edge[offset + 1] * .587 + edge[offset + 2] * .114 > edge[best] * .299 + edge[best + 1] * .587 + edge[best + 2] * .114 ? offset : best, 0);
+        bufferCtx.fillStyle = `rgba(${edge[backgroundOffset]},${edge[backgroundOffset + 1]},${edge[backgroundOffset + 2]},${edge[backgroundOffset + 3] / 255})`;
+        bufferCtx.fillRect(0, 0, buffer.width, buffer.height);
+        bufferCtx.drawImage(image, sourceLeft, sourceTop, sourceWidth, sourceHeight, pad, pad, sourceWidth, sourceHeight);
+        const blurred = document.createElement("canvas"); blurred.width = buffer.width; blurred.height = buffer.height;
+        const blurredCtx = blurred.getContext("2d");
+        if (!blurredCtx) { ctx.restore(); return; }
+        blurredCtx.filter = `blur(${blurRadius}px)`;
+        blurredCtx.drawImage(buffer, 0, 0);
+        ctx.beginPath();
+        if (mark.tool === "blurCircle") ctx.ellipse(left + width / 2, top + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
+        else if (mark.radius) roundedRectPath(ctx, start, end, mark.radius); else ctx.rect(left, top, width, height);
+        ctx.clip(); ctx.drawImage(blurred, sourceLeft - pad, sourceTop - pad);
+        ctx.restore();
+      }
+    }
     else if (mark.tool === "line" || mark.tool === "arrow") {
       ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
       if (mark.tool === "arrow") {
@@ -119,12 +156,28 @@ export default function Home() {
     if (showSelection && tool === "select") safeMarks.filter((mark) => safeSelectedIds.includes(mark.id) && mark.id !== selectedId).forEach((mark) => {
       const bounds = getMarkBounds(mark); ctx.save(); ctx.strokeStyle = "#2774e6"; ctx.lineWidth = 2; ctx.setLineDash([7, 5]); ctx.strokeRect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top); ctx.restore();
     });
+    const hovered = showSelection && tool === "select" && !dragging && hoveredId !== selectedId ? safeMarks.find((mark) => mark.id === hoveredId) : null;
+    if (hovered) {
+      ctx.save(); ctx.strokeStyle = "#2774e6"; ctx.fillStyle = "white"; ctx.lineWidth = 2; ctx.setLineDash([8, 6]);
+      if (hovered.tool === "watermark") { ctx.strokeRect(8, 8, size.width - 16, size.height - 16); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(hovered.start.x, hovered.start.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+      else {
+        const textBounds = hovered.tool === "text" ? getTextBounds(hovered) : null;
+        const left = textBounds?.left ?? Math.min(hovered.start.x, hovered.end.x) - 8, top = textBounds?.top ?? Math.min(hovered.start.y, hovered.end.y) - 8;
+        const right = textBounds?.right ?? Math.max(hovered.start.x, hovered.end.x) + 8, bottom = textBounds?.bottom ?? Math.max(hovered.start.y, hovered.end.y) + 8;
+        const corners = [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
+        if (hovered.tool === "circle" || hovered.tool === "blurCircle") { ctx.beginPath(); ctx.ellipse((left + right) / 2, (top + bottom) / 2, (right - left) / 2, (bottom - top) / 2, 0, 0, Math.PI * 2); ctx.stroke(); } else ctx.strokeRect(left, top, right - left, bottom - top);
+        ctx.setLineDash([]); corners.forEach((point, index) => { const resize = ["rect", "circle", "highlight", "blur", "blurCircle", "text"].includes(hovered.tool) && index === 2, radius = ["rect", "highlight", "blur"].includes(hovered.tool) && index === 0; ctx.fillStyle = resize ? "#ffd43b" : radius ? "#2774e6" : "white"; ctx.beginPath(); ctx.arc(point.x, point.y, resize || radius ? 8 : 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+        if (hovered.tool === "blur" || hovered.tool === "blurCircle") { const point = corners[3]; ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(point.x, point.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+        if (hovered.tool === "line" || hovered.tool === "arrow") [hovered.start, hovered.end].forEach((point) => { ctx.fillStyle = "#ffd43b"; ctx.beginPath(); ctx.arc(point.x, point.y, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+      }
+      ctx.restore();
+    }
     const selected = showSelection && tool === "select" ? safeMarks.find((mark) => mark.id === selectedId) : null;
     if (selected?.tool === "watermark") {
       ctx.save(); ctx.strokeStyle = "#2774e6"; ctx.fillStyle = "white"; ctx.lineWidth = 2; ctx.setLineDash([8, 6]);
       ctx.strokeRect(8, 8, size.width - 16, size.height - 16); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(selected.start.x, selected.start.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
     }
-    if (selected && ["rect", "circle", "highlight", "line", "arrow", "text"].includes(selected.tool)) {
+    if (selected && ["rect", "circle", "highlight", "blur", "blurCircle", "line", "arrow", "text"].includes(selected.tool)) {
       ctx.save(); ctx.strokeStyle = "#2774e6"; ctx.fillStyle = "white"; ctx.lineWidth = 2; ctx.setLineDash([8, 6]);
       let corners: Point[];
       if (selected.tool === "arrow") {
@@ -142,10 +195,11 @@ export default function Home() {
         const left = textBounds?.left ?? Math.min(selected.start.x, selected.end.x) - 8, top = textBounds?.top ?? Math.min(selected.start.y, selected.end.y) - 8;
         const right = textBounds?.right ?? Math.max(selected.start.x, selected.end.x) + 8, bottom = textBounds?.bottom ?? Math.max(selected.start.y, selected.end.y) + 8;
         corners = [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
-        if (selected.tool === "circle") { ctx.beginPath(); ctx.ellipse((left + right) / 2, (top + bottom) / 2, (right - left) / 2, (bottom - top) / 2, 0, 0, Math.PI * 2); ctx.stroke(); }
+        if (selected.tool === "circle" || selected.tool === "blurCircle") { ctx.beginPath(); ctx.ellipse((left + right) / 2, (top + bottom) / 2, (right - left) / 2, (bottom - top) / 2, 0, 0, Math.PI * 2); ctx.stroke(); }
         else ctx.strokeRect(left, top, right - left, bottom - top);
       }
-      ctx.setLineDash([]); corners.forEach((point, index) => { const resizeHandle = (selected.tool === "rect" || selected.tool === "circle" || selected.tool === "highlight" || selected.tool === "text") && index === 2, cornerHandle = (selected.tool === "rect" || selected.tool === "highlight") && index === 0; ctx.fillStyle = resizeHandle ? "#ffd43b" : cornerHandle ? "#2774e6" : "white"; ctx.beginPath(); ctx.arc(point.x, point.y, resizeHandle || cornerHandle ? 8 : 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+      ctx.setLineDash([]); corners.forEach((point, index) => { const resizeHandle = (selected.tool === "rect" || selected.tool === "circle" || selected.tool === "highlight" || selected.tool === "blur" || selected.tool === "blurCircle" || selected.tool === "text") && index === 2, cornerHandle = (selected.tool === "rect" || selected.tool === "highlight" || selected.tool === "blur") && index === 0; ctx.fillStyle = resizeHandle ? "#ffd43b" : cornerHandle ? "#2774e6" : "white"; ctx.beginPath(); ctx.arc(point.x, point.y, resizeHandle || cornerHandle ? 8 : 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+      if (selected.tool === "blur" || selected.tool === "blurCircle") { const point = corners[3]; ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(point.x, point.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
       if (selected.tool === "line" || selected.tool === "arrow") [selected.start, selected.end].forEach((point) => { ctx.fillStyle = "#ffd43b"; ctx.beginPath(); ctx.arc(point.x, point.y, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
       if (selected.tool === "arrow") {
         const center = { x: (selected.start.x + selected.end.x) / 2, y: (selected.start.y + selected.end.y) / 2 };
@@ -159,7 +213,7 @@ export default function Home() {
       const right = Math.max(selectionBox.start.x, selectionBox.end.x), bottom = Math.max(selectionBox.start.y, selectionBox.end.y);
       ctx.save(); ctx.fillStyle = "#2774e61a"; ctx.strokeStyle = "#2774e6"; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.fillRect(left, top, right - left, bottom - top); ctx.strokeRect(left, top, right - left, bottom - top); ctx.restore();
     }
-  }, [safeMarks, safeSelectedIds, preview, size, selectedId, tool, selectionBox, drawMark, watermarkOpen, watermark, watermarkMode, watermarkSize, watermarkOpacity, watermarkPosition, color]);
+  }, [safeMarks, safeSelectedIds, preview, size, selectedId, hoveredId, dragging, tool, selectionBox, drawMark, watermarkOpen, watermark, watermarkMode, watermarkSize, watermarkOpacity, watermarkPosition, color]);
 
   useEffect(() => { renderCanvas(); }, [renderCanvas]);
 
@@ -182,7 +236,7 @@ export default function Home() {
     const hitMark = (mark: Mark) => {
       if (mark.tool === "watermark") return isWatermarkHit(point, mark, size.width, size.height);
       if (mark.tool === "line" || mark.tool === "arrow") return distanceToSegment(point, mark.start, mark.end) <= Math.max(14, mark.width * 2);
-      if (mark.tool !== "rect" && mark.tool !== "circle" && mark.tool !== "highlight" && mark.tool !== "text") return false;
+      if (mark.tool !== "rect" && mark.tool !== "circle" && mark.tool !== "highlight" && mark.tool !== "blur" && mark.tool !== "blurCircle" && mark.tool !== "text") return false;
       const bounds = getMarkBounds(mark); return point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom;
     };
     return [...safeMarks].reverse().find((mark) => mark.tool !== "watermark" && hitMark(mark)) ?? [...safeMarks].reverse().find(hitMark);
@@ -200,11 +254,14 @@ export default function Home() {
           setDragging(true); return;
         }
       }
-      const selectedShape = safeSelectedIds.length === 1 ? safeMarks.find((mark) => mark.id === selectedId && (mark.tool === "rect" || mark.tool === "circle" || mark.tool === "highlight")) : null;
+      const selectedShape = safeSelectedIds.length === 1 ? safeMarks.find((mark) => mark.id === selectedId && (mark.tool === "rect" || mark.tool === "circle" || mark.tool === "highlight" || mark.tool === "blur" || mark.tool === "blurCircle")) : null;
       if (selectedShape) {
         const bounds = getMarkBounds(selectedShape), maxX = Math.max(selectedShape.start.x, selectedShape.end.x), maxY = Math.max(selectedShape.start.y, selectedShape.end.y);
-        if ((selectedShape.tool === "rect" || selectedShape.tool === "highlight") && Math.hypot(point.x - (Math.min(selectedShape.start.x, selectedShape.end.x) - 8), point.y - (Math.min(selectedShape.start.y, selectedShape.end.y) - 8)) <= 18) {
+        if ((selectedShape.tool === "rect" || selectedShape.tool === "highlight" || selectedShape.tool === "blur") && Math.hypot(point.x - Math.min(selectedShape.start.x, selectedShape.end.x), point.y - Math.min(selectedShape.start.y, selectedShape.end.y)) <= 18) {
           event.currentTarget.setPointerCapture(event.pointerId); dragStart.current = point; cornerDragData.current = { id: selectedShape.id, origin: point, snapshot: safeMarks }; setDragging(true); return;
+        }
+        if ((selectedShape.tool === "blur" || selectedShape.tool === "blurCircle") && Math.hypot(point.x - (Math.min(selectedShape.start.x, selectedShape.end.x) - 8), point.y - (maxY + 8)) <= 18) {
+          event.currentTarget.setPointerCapture(event.pointerId); dragStart.current = point; blurDragData.current = { id: selectedShape.id, origin: point, snapshot: safeMarks }; setDragging(true); return;
         }
         if (Math.hypot(point.x - bounds.right, point.y - bounds.bottom) <= 16) {
           event.currentTarget.setPointerCapture(event.pointerId); dragStart.current = point;
@@ -230,7 +287,7 @@ export default function Home() {
       const selected = findMovableMark(point);
       if (selected) {
         const ids = safeSelectedIds.includes(selected.id) ? safeSelectedIds : [selected.id];
-        setSelectedIds(ids); setSelectedId(selected.id); setColor(selected.color); if (selected.tool !== "watermark") setLineWidth(selected.width); event.currentTarget.setPointerCapture(event.pointerId); dragStart.current = point; moveSnapshot.current = safeMarks; setDragging(true);
+        setSelectedIds(ids); setSelectedId(selected.id); setColor(selected.color); if (selected.tool !== "watermark" && selected.tool !== "blur" && selected.tool !== "blurCircle") setLineWidth(selected.width); event.currentTarget.setPointerCapture(event.pointerId); dragStart.current = point; moveSnapshot.current = safeMarks; setDragging(true);
       } else if (watermarkOpen && watermark.trim()) {
         const draft = { id: -1, tool: "watermark" as const, start: watermarkPosition ?? watermarkAnchor(watermarkMode, size.width, size.height), end: { x: 0, y: 0 }, color, width: watermarkSize, text: watermark.trim(), opacity: watermarkOpacity / 100, watermarkMode };
         if (isWatermarkHit(point, draft, size.width, size.height)) {
@@ -246,10 +303,13 @@ export default function Home() {
     event.currentTarget.setPointerCapture(event.pointerId); dragStart.current = point; setDragging(true); setPreview({ id: 0, tool, start: point, end: point, color, width: lineWidth });
   };
   const moveDrawing = (event: PointerEvent<HTMLElement>) => {
-    if (!dragStart.current) return;
     const point = getPoint(event);
+    if (!dragStart.current) {
+      if (tool === "select") { const hovered = findMovableMark(point); setHoveredId((id) => id === (hovered?.id ?? null) ? id : hovered?.id ?? null); }
+      return;
+    }
     if (tool === "line" && event.shiftKey) point.y = dragStart.current.y;
-    if (tool === "circle" && event.shiftKey) Object.assign(point, constrainSquare(dragStart.current, point));
+    if ((tool === "circle" || tool === "blurCircle" || tool === "rect" || tool === "highlight") && event.shiftKey) Object.assign(point, constrainSquare(dragStart.current, point));
     if (tool === "select" && watermarkDrag.current) {
       const { start, origin } = watermarkDrag.current;
       setWatermarkPosition({ x: origin.x + point.x - start.x, y: origin.y + point.y - start.y });
@@ -257,6 +317,10 @@ export default function Home() {
       const { id, origin, snapshot } = cornerDragData.current, base = snapshot.find((mark) => mark.id === id)?.radius ?? 0;
       const radius = Math.max(0, Math.min(80, base + ((origin.x - point.x) + (origin.y - point.y)) / 2));
       setMarks(snapshot.map((mark) => mark.id === id ? { ...mark, radius } : mark));
+    } else if (tool === "select" && blurDragData.current) {
+      const { id, origin, snapshot } = blurDragData.current, base = snapshot.find((mark) => mark.id === id)?.width ?? 5;
+      const width = Math.max(2, Math.min(14, base + ((origin.x - point.x) + (point.y - origin.y)) / 8));
+      setMarks(snapshot.map((mark) => mark.id === id ? { ...mark, width } : mark));
     } else if (tool === "select" && lineResizeData.current) {
       const { id, endpoint, snapshot } = lineResizeData.current;
       setMarks(snapshot.map((mark) => mark.id === id ? { ...mark, [endpoint]: point } : mark));
@@ -265,7 +329,14 @@ export default function Home() {
       if (Math.hypot(point.x - center.x, point.y - center.y) > 3) setMarks(snapshot.map((mark) => mark.id === id ? { ...mark, start: { x: center.x - Math.cos(angle) * half, y: center.y - Math.sin(angle) * half }, end: { x: center.x + Math.cos(angle) * half, y: center.y + Math.sin(angle) * half } } : mark));
     } else if (tool === "select" && shapeResizeData.current) {
       const { fixed, offset, id, snapshot } = shapeResizeData.current;
-      setMarks(snapshot.map((mark) => mark.id === id ? { ...mark, start: fixed, end: { x: point.x - offset.x - 8, y: point.y - offset.y - 8 } } : mark));
+      let end = { x: point.x - offset.x - 8, y: point.y - offset.y - 8 };
+      const original = snapshot.find((mark) => mark.id === id);
+      if (event.shiftKey && original) {
+        const width = Math.max(1, Math.abs(original.end.x - original.start.x)), height = Math.max(1, Math.abs(original.end.y - original.start.y));
+        const scale = Math.max(Math.abs(end.x - fixed.x) / width, Math.abs(end.y - fixed.y) / height);
+        end = { x: fixed.x + Math.sign(end.x - fixed.x || 1) * width * scale, y: fixed.y + Math.sign(end.y - fixed.y || 1) * height * scale };
+      }
+      setMarks(snapshot.map((mark) => mark.id === id ? { ...mark, start: fixed, end } : mark));
     } else if (tool === "select" && resizeData.current) {
       const { anchor, baseWidth, baseHeight, id, width, snapshot } = resizeData.current;
       const ratio = Math.max(.25, Math.hypot(point.x - anchor.x, point.y - anchor.y) / Math.hypot(baseWidth, baseHeight));
@@ -280,10 +351,11 @@ export default function Home() {
   const finishDrawing = (event: PointerEvent<HTMLElement>) => {
     if (!dragStart.current) return; const end = getPoint(event), start = dragStart.current;
     if (tool === "line" && event.shiftKey) end.y = start.y;
-    if (tool === "circle" && event.shiftKey) Object.assign(end, constrainSquare(start, end));
+    if ((tool === "circle" || tool === "blurCircle" || tool === "rect" || tool === "highlight") && event.shiftKey) Object.assign(end, constrainSquare(start, end));
     if (tool === "select") {
-      const watermarkMoving = watermarkDrag.current, cornerResizing = cornerDragData.current, lineResizing = lineResizeData.current, rotation = rotateData.current, shapeResizing = shapeResizeData.current, resizing = resizeData.current, movement = moveSnapshot.current, marquee = selectionBox;
+      const watermarkMoving = watermarkDrag.current, cornerResizing = cornerDragData.current, blurAdjusting = blurDragData.current, lineResizing = lineResizeData.current, rotation = rotateData.current, shapeResizing = shapeResizeData.current, resizing = resizeData.current, movement = moveSnapshot.current, marquee = selectionBox;
       if (!watermarkMoving && cornerResizing && Math.hypot(end.x - start.x, end.y - start.y) > 3) { const snapshot = cornerResizing.snapshot; setPast((history) => [...(Array.isArray(history) ? history : []), snapshot]); setFuture([]); }
+      else if (!watermarkMoving && blurAdjusting && Math.hypot(end.x - start.x, end.y - start.y) > 3) { const snapshot = blurAdjusting.snapshot; setPast((history) => [...(Array.isArray(history) ? history : []), snapshot]); setFuture([]); }
       else if (!watermarkMoving && lineResizing && Math.hypot(end.x - start.x, end.y - start.y) > 3) { const snapshot = lineResizing.snapshot; setPast((history) => [...(Array.isArray(history) ? history : []), snapshot]); setFuture([]); }
       else if (!watermarkMoving && rotation && Math.hypot(end.x - rotation.center.x, end.y - rotation.center.y) > 3) { const snapshot = rotation.snapshot; setPast((history) => [...(Array.isArray(history) ? history : []), snapshot]); setFuture([]); }
       else if (!watermarkMoving && shapeResizing && Math.hypot(end.x - start.x, end.y - start.y) > 3) { const snapshot = shapeResizing.snapshot; setPast((history) => [...(Array.isArray(history) ? history : []), snapshot]); setFuture([]); }
@@ -294,7 +366,7 @@ export default function Home() {
         const ids = safeMarks.filter((mark) => mark.tool !== "watermark").filter((mark) => { const bounds = getMarkBounds(mark); return bounds.left <= right && bounds.right >= left && bounds.top <= bottom && bounds.bottom >= top; }).map((mark) => mark.id);
         setSelectedIds(ids); setSelectedId(ids[0] ?? null);
       }
-      moveSnapshot.current = null; rotateData.current = null; cornerDragData.current = null; shapeResizeData.current = null; lineResizeData.current = null; resizeData.current = null; watermarkDrag.current = null;
+      moveSnapshot.current = null; rotateData.current = null; cornerDragData.current = null; blurDragData.current = null; shapeResizeData.current = null; lineResizeData.current = null; resizeData.current = null; watermarkDrag.current = null;
       setSelectionBox(null);
     } else if (Math.hypot(end.x - start.x, end.y - start.y) > 5) commit({ id: nextId.current++, tool, start, end, color, width: lineWidth });
     dragStart.current = null; setDragging(false); setPreview(null);
@@ -316,7 +388,7 @@ export default function Home() {
       setPast((history) => [...(Array.isArray(history) ? history : []), current]); setFuture([]);
       return current.filter((mark) => !ids.includes(mark.id));
     });
-    setSelectedId(null); setSelectedIds([]); setCornerEditorOpen(false);
+    setSelectedId(null); setSelectedIds([]);
   }, [safeSelectedIds, selectedId]);
   const changeColor = (nextColor: string) => {
     setColor(nextColor);
@@ -334,10 +406,10 @@ export default function Home() {
     const ids = safeSelectedIds.length ? safeSelectedIds : selectedId === null ? [] : [selectedId];
     if (!ids.length) return;
     setMarks((items) => {
-      const current = Array.isArray(items) ? items : [], selected = current.filter((mark) => ids.includes(mark.id) && mark.tool !== "watermark");
+      const current = Array.isArray(items) ? items : [], selected = current.filter((mark) => ids.includes(mark.id) && mark.tool !== "watermark" && mark.tool !== "blur" && mark.tool !== "blurCircle");
       if (!selected.length || selected.every((mark) => mark.width === nextWidth)) return current;
       if (!widthSnapshot.current) { widthSnapshot.current = current; setPast((history) => [...(Array.isArray(history) ? history : []), current]); setFuture([]); }
-      return current.map((mark) => ids.includes(mark.id) && mark.tool !== "watermark" ? { ...mark, width: nextWidth } : mark);
+      return current.map((mark) => ids.includes(mark.id) && mark.tool !== "watermark" && mark.tool !== "blur" && mark.tool !== "blurCircle" ? { ...mark, width: nextWidth } : mark);
     });
   };
   const addWatermark = () => {
@@ -388,7 +460,7 @@ export default function Home() {
       <label className="opacity">大小<input type="range" min="16" max="96" value={watermarkSize} onChange={(e) => setWatermarkSize(Number(e.target.value))} /><span>{watermarkSize}px</span></label>
       <label className="mode">展示方式<select value={watermarkMode} onChange={(e) => { const next = e.target.value as WatermarkMode; setWatermarkMode(next); if (size.width) setWatermarkPosition(watermarkAnchor(next, size.width, size.height)); }}><option value="corner">右下角</option><option value="center">居中</option><option value="diagonal">斜向居中</option><option value="tile">平铺（横竖）</option><option value="tileHorizontal">水平平铺</option><option value="tileVertical">垂直平铺</option></select></label><button onClick={addWatermark}>添加水印</button>
     </section>}
-    <section className={`workspace ${dragging ? "drawing" : ""}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); loadFile(e.dataTransfer.files[0]); }} onPointerDown={tool === "select" ? startDrawing : undefined} onPointerMove={tool === "select" ? moveDrawing : undefined} onPointerUp={tool === "select" ? finishDrawing : undefined} onPointerCancel={tool === "select" ? finishDrawing : undefined}>
+    <section className={`workspace ${dragging ? "drawing" : ""}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); loadFile(e.dataTransfer.files[0]); }} onPointerDown={tool === "select" ? startDrawing : undefined} onPointerMove={tool === "select" ? moveDrawing : undefined} onPointerUp={tool === "select" ? finishDrawing : undefined} onPointerCancel={tool === "select" ? finishDrawing : undefined} onPointerLeave={() => { if (tool === "select" && !dragStart.current) setHoveredId(null); }}>
       {!size.width ? <button className="drop-zone" onClick={() => fileRef.current?.click()}><span className="upload-art"><i>↑</i></span><strong>拖入一张图片，开始标注</strong><small>或点击选择图片 · 也可以直接粘贴截图</small><b>选择图片</b></button> :
         <div className="canvas-stage"><canvas className={tool === "select" ? "selecting" : ""} ref={canvasRef} width={size.width} height={size.height} onPointerDown={tool === "select" ? undefined : startDrawing} onPointerMove={tool === "select" ? undefined : moveDrawing} onPointerUp={tool === "select" ? undefined : finishDrawing} onPointerCancel={tool === "select" ? undefined : finishDrawing} aria-label="图片标注画布" /><div className="image-meta"><span>{fileName}</span><button onClick={() => fileRef.current?.click()}>更换图片</button></div></div>}
       <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => loadFile(e.target.files?.[0])} />

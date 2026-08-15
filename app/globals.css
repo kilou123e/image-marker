@@ -45,7 +45,7 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .tool-glyph { display: block; width: 28px; height: 23px; margin: 0 auto 3px; color: #3f4247; }
 .tool-glyph-highlight { color: #ffb000; }
 .tool-label { display: block; }
-.shortcut-row { display: grid; grid-template-columns: repeat(7, var(--tool-cell)); gap: 4px; padding: 0 4px; color: #85888d; font-family: inherit; font-size: 11px; font-weight: 700; line-height: 15px; text-align: center; }
+.shortcut-row { display: grid; grid-template-columns: repeat(9, var(--tool-cell)); gap: 4px; padding: 0 4px; color: #85888d; font-family: inherit; font-size: 11px; font-weight: 700; line-height: 15px; text-align: center; }
 .shortcut-row kbd { display: block; min-width: 0; padding: 0; border: 0; background: transparent; font: inherit; }
 .shortcut-row kbd.active { color: #c24b38; }
 .tool-button:hover { background: #f2f2f3; }
